@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import copy
 
 
-np.set_printoptions(threshold=sys.maxsize, linewidth=1000, suppress=True)
-np.set_printoptions(precision=5)
+np.set_printoptions(threshold=sys.maxsize, linewidth=1000, suppress=True) #控制输出的函数
+np.set_printoptions(precision=5) #控制小数点后是5位
 np.random.seed(1)
 
 

@@ -21,10 +21,10 @@ def level_set(point, ls_fn):#判断
         y = point[1]
         z = point[2]
     else:
-        x = point[:, 0]
-        y = point[:, 1]
-        z = point[:, 2]
-    return ls_fn(x, y, z)
+        x = point[:, 0] #表示对二维数组，取所有行的第0个元素
+        y = point[:, 1] #表示对二维数组，取所有行的第1个元素
+        z = point[:, 2] #表示对二维数组，取所有行的第2个元素
+    return ls_fn(x, y, z)#感觉可能没有用if的必要（？
 
 
 def grad_level_set(point, ls_grad_fn):#求等值集的梯度
@@ -53,7 +53,7 @@ def to_id_xyz(element_id, base):
     id_x = element_id % base
     element_id = element_id // base
     return id_x, id_y, id_z 
-
+    #下一个函数就是这个函数的逆运算，这个函数把element_id转化为了三维坐标下的坐标
 
 def to_id(id_x, id_y, id_z, base): 
     """对于某个给定的单元，这个函数将其编号(id_x, id_y, id_z)映射到element_id
@@ -69,6 +69,8 @@ def to_id(id_x, id_y, id_z, base):
     """
     return id_x * np.power(base, 2) + id_y * base + id_z
 
+    #（xiong）思考：把三维坐标 和 一维数字 做映射 的意义是什么？（为什么会想用这个方式来计算element_id映射？） 在2D环境里还需要这样做吗？
+
 
 def get_vertices(id_x, id_y, id_z, h):
     """用这个函数找到顶点
@@ -83,12 +85,12 @@ def get_vertices(id_x, id_y, id_z, h):
         np.ndarray: vertices coordinates, e.g., shape is (8, 3) for 3D case
     """
     vertices = []
-    vertices_per_direction = 2
+    vertices_per_direction = 2#沿每个方向上的顶点数是2个，即0，1 
     for i in range(vertices_per_direction):
         for j in range(vertices_per_direction):
             for k in range(vertices_per_direction):
                 vertices.append(np.array([-DOMAIN_SIZE + (id_x + i) * h, -DOMAIN_SIZE + (id_y + j) * h, -DOMAIN_SIZE + (id_z + k) * h]))
-    vertices = np.stack(vertices)
+    vertices = np.stack(vertices)#把id_x, y, z 对应到三个轴的坐标上去
     return vertices
 
 
@@ -126,10 +128,10 @@ def brute_force(base, ls_fn):
         list[int]: a list of element indices 
     """
     ids_cut = []
-    h = 2 * DOMAIN_SIZE / base
+    h = 2 * DOMAIN_SIZE / base  
     for id_x in range(base):
         print(f"id_x is {id_x}, base = {base}")
-        print(len(ids_cut) / np.power(base, 3))
+        print(len(ids_cut) / np.power(base, 3)) #打印的这句话是什么意思？
         for id_y in range(base):
             for id_z in range(base):
                 vertices = get_vertices(id_x, id_y, id_z, h)
@@ -150,13 +152,13 @@ def is_cut(vertices, ls_fn):
     """
     negative_flag = False
     positive_flag = False
-    for vertice in vertices:
+    for vertice in vertices:#对顶点集的每个顶点做循环
         value = level_set(vertice, ls_fn)
         if value >= 0: # 用户定义的函数大于等于零，则点在区域内
             positive_flag = True
         else: # 反之，点在区域外
             negative_flag = True
-    return negative_flag and positive_flag, negative_flag, positive_flag
+    return negative_flag and positive_flag, negative_flag, positive_flag#第一个就是指这个单元既有在外面的点又有在里面的点，顾该单元是被函数线穿过的单元
 
 
 def neighbors(element_id, base, h, ls_fn):
@@ -276,13 +278,13 @@ def generate_cut_elements(ls_fn):
     """
     start_refinement_level = 5
     end_refinement_level = 7
-    start_base = np.power(DIVISION, start_refinement_level)
-    ids_cut = brute_force(start_base, ls_fn)
+    start_base = np.power(DIVISION, start_refinement_level) #求几的几次方
+    ids_cut = brute_force(start_base, ls_fn)#用“蛮力”遍历网格中的每一个单元，判断它是否被曲面零等高线穿过，将穿过的单元存到ids_cut
     total_ids = []
-    total_refinement_levels = []
+    total_refinement_levels = []#方括号是列表，list用于存储可改变的元素
     total_ids.append(ids_cut)
     total_refinement_levels.append(start_refinement_level)
-    print(f"refinement_level {start_refinement_level}, length of inds {len(ids_cut)}")
+    print(f"refinement_level {start_refinement_level}, length of inds {len(ids_cut)}") #打印一个字典
 
     # Note(Xue): 思考为什么这样做能够更加高效
     for refinement_level in range(start_refinement_level, end_refinement_level):
