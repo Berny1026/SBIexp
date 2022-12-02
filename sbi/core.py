@@ -91,7 +91,7 @@ def get_vertices(id_x, id_y, id_z, h):
             for k in range(vertices_per_direction):
                 vertices.append(np.array([-DOMAIN_SIZE + (id_x + i) * h, -DOMAIN_SIZE + (id_y + j) * h, -DOMAIN_SIZE + (id_z + k) * h]))
     vertices = np.stack(vertices)#把id_x, y, z 对应到三个轴的坐标上去
-    return vertices
+    return vertices#一个二维列表，里面包含8个实际坐标列表
 
 
 def get_element_sub_ids(element_id, base):
@@ -176,17 +176,17 @@ def neighbors(element_id, base, h, ls_fn):
     faces = []
     min_id = 0
     max_id = base - 1
-    for d in range(DIM):
-        for r in range(NUM_DIRECTIONS):
+    for d in range(DIM):#DIM应该是dimension，数值为3，对应x, y, z三个方向
+        for r in range(NUM_DIRECTIONS):#NUM_DIRECTION = 2, 对应0和1，r为0就是原坐标-1的坐标对应的格子，r为1就是原坐标+1对应的坐标的格子
             tmp = np.array(id_xyz)
-            tmp[d] = id_xyz[d] + (2 * r - 1)
+            tmp[d] = id_xyz[d] + (2 * r - 1)#这里是对该小格子的相邻六个小格子进行处理，即上下左右六个小格子
             if tmp[d] >= min_id and tmp[d] <= max_id:
                 id_x, id_y, id_z = tmp
-                vertices = get_vertices(id_x, id_y, id_z, h)
+                vertices = get_vertices(id_x, id_y, id_z, h)#get_vertices会对应到x, y, z轴的坐标值
                 cut_flag, negative_flag, positive_flag = is_cut(vertices, ls_fn)
                 if not cut_flag and negative_flag:
                     faces.append([element_id, d*NUM_DIRECTIONS + r])
-    return faces
+    return faces#faces是个二维列表，存储的是element_id和该element_id对应的形成surrogate boundary的面
 
 
 def triangle_area(a, b, c):
@@ -202,10 +202,10 @@ def sbm_map_newton(point, function_value, function_gradient, ls_fn, ls_grad_fn):
     tol = 1e-8 #指1乘以10的-8次方
     res = 1.
     relax_param = 1.#松弛参数（？
-
-    phi = function_value(point, ls_fn)
-    grad_phi = function_gradient(point, ls_grad_fn)
-    target_point = np.array(point)#找到目标点的坐标
+    #这里的Newton method三个重要参数如下
+    phi = function_value(point, ls_fn)#把估计值带入函数得到phi
+    grad_phi = function_gradient(point, ls_grad_fn)#把估计值带入函数的导数得到grad_phi
+    target_point = np.array(point)##point看成初始估计，并且会不断向误差较小的方向进行调整
 
     step = 0
     while res > tol:#不断缩小误差
@@ -219,7 +219,6 @@ def sbm_map_newton(point, function_value, function_gradient, ls_fn, ls_grad_fn):
 
     # print(step)
     return target_point
-    # Note(Xiong): 目前看到这里
 
 
 def estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn):
@@ -235,15 +234,15 @@ def estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn):
 
     mapped_boundary_points = np.zeros((num_boundary_points, DIM))
     for i, b_point in enumerate(boundary_points):
-        mapped_boundary_points[i] = sbm_map_newton(b_point, level_set, grad_level_set, ls_fn, ls_grad_fn)  
+        mapped_boundary_points[i] = sbm_map_newton(b_point, level_set, grad_level_set, ls_fn, ls_grad_fn)#用牛顿法把  
 
     mapped_q_point = sbm_map_newton(shifted_q_point, level_set, grad_level_set, ls_fn, ls_grad_fn)
-
+    #/为续行符
     weight = triangle_area(mapped_boundary_points[0], mapped_boundary_points[1], mapped_q_point) + \
              triangle_area(mapped_boundary_points[0], mapped_boundary_points[2], mapped_q_point) + \
              triangle_area(mapped_boundary_points[3], mapped_boundary_points[2], mapped_q_point) + \
              triangle_area(mapped_boundary_points[3], mapped_boundary_points[1], mapped_q_point)
-
+    #weight值就是四个三角形面积之和
     return mapped_q_point, weight
 
 
@@ -255,9 +254,9 @@ def process_face(face, base, h, quad_level, ls_fn, ls_grad_fn):
     weights = []
     element_id, face_number = face
     id_xyz = to_id_xyz(element_id, base)
-    d = face_number // NUM_DIRECTIONS
-    r = face_number % NUM_DIRECTIONS
-    shifted_quad_points = np.zeros((np.power(quad_level, 2), DIM))
+    d = face_number // NUM_DIRECTIONS #NUM_DIRECTION = 2，还原参数d, 可以取0，1，2
+    r = face_number % NUM_DIRECTIONS #还原参数r，可以取0，1
+    shifted_quad_points = np.zeros((np.power(quad_level, 2), DIM))#返回一个用0填充的数组
     for i in range(quad_level):
         for j in range(quad_level):
             shifted_quad_points[i * quad_level + j, d] = -DOMAIN_SIZE + (id_xyz[d] + r) * h
@@ -306,26 +305,26 @@ def generate_cut_elements(ls_fn):
     total_ids = np.array(total_ids, dtype=object)
     total_refinement_levels = np.array(total_refinement_levels)
     print(f"len of total_refinement_levels {len(total_refinement_levels)}")
-    return total_ids, total_refinement_levels
+    return total_ids, total_refinement_levels#total_ids是一个二维列表
 
 
 def compute_qw(total_ids, total_refinement_levels, ls_fn, ls_grad_fn, quad_level, mesh_index):
     """第二个大的步骤，计算积分点(quadrature point)以及积分点对应的权重(weight)
     有了积分点和权重，算曲面积分就易如反掌了。
     """
-    ids_cut = total_ids[mesh_index]
+    ids_cut = total_ids[mesh_index]#total_ids是一个二维列表，ids_cut是一个一维列表，存有某一个refinement_level下的筛选后的编号
     refinement_level = total_refinement_levels[mesh_index]
     base = np.power(DIVISION, refinement_level)
     h = 2 * DOMAIN_SIZE / base
     print("\nrefinement_level is {} with h being {}, number of elements cut is {}".format(refinement_level, h, len(ids_cut)))
     faces = []
     for ele in range(len(ids_cut)):
-        element_id = ids_cut[ele]
-        faces += neighbors(element_id, base, h, ls_fn)
+        element_id = ids_cut[ele]#这个for循环是为了遍历每一个ids_cut中的每一个编号
+        faces += neighbors(element_id, base, h, ls_fn)#找到surrogate boundary所用到的面（格子的id, 面对应的号码）
 
     mapped_quad_points = []
     weights = []
-    for i, f in enumerate(faces):
+    for i, f in enumerate(faces):#遍历每一个面
         mapped_quad_points_f, weights_f = process_face(faces[i], base, h, quad_level, ls_fn, ls_grad_fn)
         mapped_quad_points += mapped_quad_points_f
         weights += weights_f
@@ -335,4 +334,4 @@ def compute_qw(total_ids, total_refinement_levels, ls_fn, ls_grad_fn, quad_level
     mapped_quad_points = np.array(mapped_quad_points)
     weights = np.array(weights)
 
-    return mapped_quad_points, weights
+    return mapped_quad_points, weights#返回每一个积分点及其对应的权重

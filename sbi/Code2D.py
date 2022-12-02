@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib as plt
 import copy
 
-DIM = 3
+DIM = 2
 DOMAIN_SIZE = 2 # 实际上我们定义的区域是[-2, 2]x[-2, 2]的正方形（2D情况）
 DIVISION = 2
 ORDER = 1
@@ -78,6 +78,35 @@ def brute_force(base, ls_fn):
     return ids_cut
 
 
+def neighbors(element_id, base, h, ls_fn):
+    """给定被曲线穿过的单元，如何得到我们想要的surrogate boundary?
+    
+    Args:
+        element_id (int): global index
+        base (int): number of elements per axis
+        h (float): element size
+    
+    Returns:
+        list: list of faces that form the surrogate boundary
+    """
+    id_xy = to_id_xy(element_id, base)
+    sides = []
+    min_id = 0
+    max_id = base - 1
+    for d in range(DIM):#DIM应该是dimension，数值为2，对应x, y两个方向
+        for r in range(NUM_DIRECTIONS):#NUM_DIRECTION = 2, 对应0和1，r为0就是原坐标-1的坐标对应的格子，r为1就是原坐标+1对应的坐标的格子
+            tmp = np.array(id_xy)
+            tmp[d] = id_xyz[d] + (2 * r - 1)#这里是对该小格子的相邻六个小格子进行处理，即上下左右六个小格子
+            if tmp[d] >= min_id and tmp[d] <= max_id:
+                id_x, id_y = tmp
+                vertices = get_vertices(id_x, id_y, h)#get_vertices会对应到x, y, z轴的坐标值
+                cut_flag, negative_flag, positive_flag = is_cut(vertices, ls_fn)
+                if not cut_flag and negative_flag:
+                    sides.append([element_id, d*NUM_DIRECTIONS + r])
+    return sides#sides是个二维列表，存储的是element_id和该element_id对应的形成surrogate boundary的边
+
+
+
 def generate_cut_elements(ls_fn):
     
     start_refinement_level = 5
@@ -113,25 +142,33 @@ def generate_cut_elements(ls_fn):
 
 
 
+def compute_qw(total_ids, total_refinement_levels, ls_fn, ls_grad_fn, quad_level, mesh_index):
+    """第二个大的步骤，计算积分点(quadrature point)以及积分点对应的权重(weight)
+    有了积分点和权重，算曲线积分就易如反掌了。
+    """
+    ids_cut = total_ids[mesh_index]#total_ids是一个二维列表，ids_cut是一个一维列表，存有某一个refinement_level下的筛选后的编号
+    refinement_level = total_refinement_levels[mesh_index]
+    base = np.power(DIVISION, refinement_level)
+    h = 2 * DOMAIN_SIZE / base
+    print("\nrefinement_level is {} with h being {}, number of elements cut is {}".format(refinement_level, h, len(ids_cut)))
+    sides = []
+    for ele in range(len(ids_cut)):
+        element_id = ids_cut[ele]#这个for循环是为了遍历每一个ids_cut中的每一个编号
+        sides += neighbors(element_id, base, h, ls_fn)#找到list of sides that form the surrogate boundary
 
+    mapped_quad_points = []
+    weights = []
+    for i, f in enumerate(sides):#遍历每一个边
+        mapped_quad_points_f, weights_f = process_sides(faces[i], base, h, quad_level, ls_fn, ls_grad_fn)
+        mapped_quad_points += mapped_quad_points_f
+        weights += weights_f
+        if i % 100 == 0:
+            print(f"Progress {(i + 1)/len(faces)*100:.5f}%, weights {np.sum(np.array(weights)):.5f}")
 
+    mapped_quad_points = np.array(mapped_quad_points)
+    weights = np.array(weights)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    return mapped_quad_points, weights
 
 
 
