@@ -3,6 +3,11 @@ import numpy as np
 import matplotlib as plt
 import copy
 
+
+np.set_printoptions(threshold=sys.maxsize, linewidth=1000, suppress=True)
+np.set_printoptions(precision=5)
+np.random.seed(1)
+
 DIM = 2
 DOMAIN_SIZE = 2 # 实际上我们定义的区域是[-2, 2]x[-2, 2]的正方形（2D情况）
 DIVISION = 2
@@ -13,6 +18,13 @@ def level_set(point, ls_fn):#判断
     x = point[0]
     y = point[1]
     return ls_fn(x, y)
+
+
+def grad_level_set(point, ls_grad_fn):#求等值集的梯度
+    x = point[0]
+    y = point[1]
+    return ls_grad_fn(x, y)
+
 
 def to_id_xy(element_id, base):
     
@@ -87,7 +99,7 @@ def neighbors(element_id, base, h, ls_fn):
         h (float): element size
     
     Returns:
-        list: list of faces that form the surrogate boundary
+        list: list of sides that form the surrogate boundary
     """
     id_xy = to_id_xy(element_id, base)
     sides = []
@@ -96,7 +108,7 @@ def neighbors(element_id, base, h, ls_fn):
     for d in range(DIM):#DIM应该是dimension，数值为2，对应x, y两个方向
         for r in range(NUM_DIRECTIONS):#NUM_DIRECTION = 2, 对应0和1，r为0就是原坐标-1的坐标对应的格子，r为1就是原坐标+1对应的坐标的格子
             tmp = np.array(id_xy)
-            tmp[d] = id_xyz[d] + (2 * r - 1)#这里是对该小格子的相邻六个小格子进行处理，即上下左右六个小格子
+            tmp[d] = id_xy[d] + (2 * r - 1)#这里是对该小格子的相邻六个小格子进行处理，即上下左右六个小格子
             if tmp[d] >= min_id and tmp[d] <= max_id:
                 id_x, id_y = tmp
                 vertices = get_vertices(id_x, id_y, h)#get_vertices会对应到x, y, z轴的坐标值
@@ -105,6 +117,84 @@ def neighbors(element_id, base, h, ls_fn):
                     sides.append([element_id, d*NUM_DIRECTIONS + r])
     return sides#sides是个二维列表，存储的是element_id和该element_id对应的形成surrogate boundary的边
 
+
+def segment_distance(a, b):
+    """TODO: 2维情况应该怎么处理？
+    """
+    dot1 = np.array(a)
+    dot2 = np.array(b)
+
+    return np.linalg.norm(dot1 - dot2)
+
+
+def sbm_map_newton(point, function_value, function_gradient, ls_fn, ls_grad_fn):
+    """核心算法,对应JCP论文里的章节为"3.2. Considerations for maps"
+    JCP论文地址：https://doi.org/10.1016/j.jcp.2021.110360
+    """
+    tol = 1e-8 #指1乘以10的-8次方
+    res = 1.
+    relax_param = 1.#松弛参数（？
+    #这里的Newton method三个重要参数如下
+    phi = function_value(point, ls_fn)#把估计值带入函数得到phi
+    grad_phi = function_gradient(point, ls_grad_fn)#把估计值带入函数的导数得到grad_phi
+    target_point = np.array(point)##point看成初始估计，并且会不断向误差较小的方向进行调整
+
+    step = 0
+    while res > tol:#不断缩小误差
+      delta1 = -phi * grad_phi / np.dot(grad_phi, grad_phi)#dot用来计算向量的点积和矩阵的乘法
+      delta2 = (point - target_point) - np.dot(point - target_point, grad_phi) / np.dot(grad_phi, grad_phi) * grad_phi
+      target_point = target_point + relax_param * (delta1 + delta2)
+      phi = function_value(target_point, ls_fn)
+      grad_phi = function_gradient(target_point, ls_grad_fn)
+      res = np.absolute(phi) + np.linalg.norm(np.cross(grad_phi, (point - target_point)))
+      step += 1
+
+    # print(step)
+    return target_point
+
+
+def estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn):
+    """辅助计算
+    """
+    num_boundary_points = 2 #DIM
+    boundary_points = np.zeros((num_boundary_points, DIM))
+    for r in range(NUM_DIRECTIONS): #取0，1
+            boundary_points[r, d] = shifted_q_point[d]
+            boundary_points[r, (d + 1) % DIM] = shifted_q_point[(d + 1) % DIM] + step / 2. * (2 * r - 1)
+            #计算出每个shifted_q_point所对应的线段的2个顶点
+
+    mapped_boundary_points = np.zeros((num_boundary_points, DIM))
+    for i, b_point in enumerate(boundary_points):#把每个boundary_point映射到函数上（通过牛顿法来求解该mapped点的坐标）
+        mapped_boundary_points[i] = sbm_map_newton(b_point, level_set, grad_level_set, ls_fn, ls_grad_fn)#用牛顿法把映射后对应的坐标表示出来  
+    #下面一行表示将shifted_q_point映射到曲面函数上
+    mapped_q_point = sbm_map_newton(shifted_q_point, level_set, grad_level_set, ls_fn, ls_grad_fn)
+
+    weight = segment_distance(mapped_boundary_points[0], mapped_q_point) + segment_distance(mapped_boundary_points[1], mapped_q_point) 
+    #weight值就是两个线段长度之和
+    return mapped_q_point, weight
+
+
+def process_sides(side, base, h, quad_level, ls_fn, ls_grad_fn):
+    """对于每一个边，计算在边上对应的积分点和权重，quad_level是指该side被分割的程度
+    """
+    step = h / quad_level#把side的边长进行更近一步的划分
+    mapped_quad_points = []#用这个列表存储映射后在曲面上的坐标点
+    weights = []#用这个列表来储存权重，即两段线段的长度
+    element_id, side_number = side
+    id_xy = to_id_xy(element_id, base)
+    d = side_number // NUM_DIRECTIONS #NUM_DIRECTION = 2，还原参数d, 可以取0，1
+    r = side_number % NUM_DIRECTIONS #还原参数r，可以取0，1
+    shifted_quad_points = np.zeros((np.power(quad_level, 1), DIM)) #返回一个用0填充的数组
+    for i in range(quad_level):
+            shifted_quad_points[i , d] = -DOMAIN_SIZE + (id_xy[d] + r) * h
+            shifted_quad_points[i , (d + 1) % DIM] = -DOMAIN_SIZE + id_xy[(d + 1) % DIM]* h + step / 2. + i * step
+    #用上面这个循环算出了该面上的积分点的坐标值
+    for shifted_q_point in shifted_quad_points:#对每一个shifted_quad_points作处理，计算对应的权重长度值
+        mapped_quad_point, weight = estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn)
+        mapped_quad_points.append(mapped_quad_point)
+        weights.append(weight)
+
+    return mapped_quad_points, weights
 
 
 def generate_cut_elements(ls_fn):
@@ -159,11 +249,11 @@ def compute_qw(total_ids, total_refinement_levels, ls_fn, ls_grad_fn, quad_level
     mapped_quad_points = []
     weights = []
     for i, f in enumerate(sides):#遍历每一个边
-        mapped_quad_points_f, weights_f = process_sides(faces[i], base, h, quad_level, ls_fn, ls_grad_fn)
+        mapped_quad_points_f, weights_f = process_sides(sides[i], base, h, quad_level, ls_fn, ls_grad_fn)
         mapped_quad_points += mapped_quad_points_f
         weights += weights_f
         if i % 100 == 0:
-            print(f"Progress {(i + 1)/len(faces)*100:.5f}%, weights {np.sum(np.array(weights)):.5f}")
+            print(f"Progress {(i + 1)/len(sides)*100:.5f}%, weights {np.sum(np.array(weights)):.5f}")
 
     mapped_quad_points = np.array(mapped_quad_points)
     weights = np.array(weights)

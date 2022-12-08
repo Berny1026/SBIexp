@@ -224,18 +224,18 @@ def sbm_map_newton(point, function_value, function_gradient, ls_fn, ls_grad_fn):
 def estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn):
     """辅助计算
     """
-    num_boundary_points = 4 if DIM == 3 else 2
+    num_boundary_points = 4 #if DIM == 3 else 2
     boundary_points = np.zeros((num_boundary_points, DIM))
-    for r in range(NUM_DIRECTIONS):
-        for s in range(NUM_DIRECTIONS):
+    for r in range(NUM_DIRECTIONS): #取0，1
+        for s in range(NUM_DIRECTIONS): #取0，1
             boundary_points[r*NUM_DIRECTIONS + s, d] = shifted_q_point[d]
             boundary_points[r*NUM_DIRECTIONS + s, (d + 1) % DIM] = shifted_q_point[(d + 1) % DIM] + step / 2. * (2 * r - 1)
             boundary_points[r*NUM_DIRECTIONS + s, (d + 2) % DIM] = shifted_q_point[(d + 2) % DIM] + step / 2. * (2 * s - 1)
-
+    #计算出每个shifted_q_point所对应的正方形面的4个顶点
     mapped_boundary_points = np.zeros((num_boundary_points, DIM))
-    for i, b_point in enumerate(boundary_points):
-        mapped_boundary_points[i] = sbm_map_newton(b_point, level_set, grad_level_set, ls_fn, ls_grad_fn)#用牛顿法把  
-
+    for i, b_point in enumerate(boundary_points):#把每个boundary_point映射到函数上（通过牛顿法来求解该mapped点的坐标）
+        mapped_boundary_points[i] = sbm_map_newton(b_point, level_set, grad_level_set, ls_fn, ls_grad_fn)#用牛顿法把映射后对应的坐标表示出来  
+    #下面一行表示将shifted_q_point映射到曲面函数上
     mapped_q_point = sbm_map_newton(shifted_q_point, level_set, grad_level_set, ls_fn, ls_grad_fn)
     #/为续行符
     weight = triangle_area(mapped_boundary_points[0], mapped_boundary_points[1], mapped_q_point) + \
@@ -247,27 +247,26 @@ def estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn):
 
 
 def process_face(face, base, h, quad_level, ls_fn, ls_grad_fn):
-    """对于每一个面，计算在曲面上对应的积分点和权重
+    """对于每一个面，计算在曲面上对应的积分点和权重，quad_level是指该face被分割的程度
     """
-    step = h / quad_level
-    mapped_quad_points = []
-    weights = []
+    step = h / quad_level#把face的边长进行更近一步的划分
+    mapped_quad_points = []#用这个列表存储映射后在曲面上的坐标点
+    weights = []#用这个列表来储存权重，即四个三角形区域的面积
     element_id, face_number = face
     id_xyz = to_id_xyz(element_id, base)
     d = face_number // NUM_DIRECTIONS #NUM_DIRECTION = 2，还原参数d, 可以取0，1，2
     r = face_number % NUM_DIRECTIONS #还原参数r，可以取0，1
-    shifted_quad_points = np.zeros((np.power(quad_level, 2), DIM))#返回一个用0填充的数组
+    shifted_quad_points = np.zeros((np.power(quad_level, 2), DIM)) #返回一个用0填充的数组
     for i in range(quad_level):
         for j in range(quad_level):
             shifted_quad_points[i * quad_level + j, d] = -DOMAIN_SIZE + (id_xyz[d] + r) * h
             shifted_quad_points[i * quad_level + j, (d + 1) % DIM] = -DOMAIN_SIZE + id_xyz[(d + 1) % DIM]* h + step / 2. + i * step
             shifted_quad_points[i * quad_level + j, (d + 2) % DIM] = -DOMAIN_SIZE + id_xyz[(d + 2) % DIM]* h + step / 2. + j * step
-
-    for shifted_q_point in shifted_quad_points:
+    #用上面这个循环算出了该面上的积分点的坐标值
+    for shifted_q_point in shifted_quad_points:#对每一个shifted_quad_points作处理，计算对应的权重面积值
         mapped_quad_point, weight = estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn)
         mapped_quad_points.append(mapped_quad_point)
         weights.append(weight)
-
     return mapped_quad_points, weights
 
 
