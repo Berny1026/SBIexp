@@ -56,8 +56,7 @@ def get_vertices(id_x, id_y, h):
     vertices_per_direction = 2
     for i in range(vertices_per_direction):
         for j in range(vertices_per_direction):
-            for k in range(vertices_per_direction):
-                vertices.append(np.array([-DOMAIN_SIZE + (id_x + i) * h, -DOMAIN_SIZE + (id_y + j) * h]))
+            vertices.append(np.array([-DOMAIN_SIZE + (id_x + i) * h, -DOMAIN_SIZE + (id_y + j) * h]))
     vertices = np.stack(vertices)
     return vertices
 
@@ -193,7 +192,6 @@ def process_sides(side, base, h, quad_level, ls_fn, ls_grad_fn):
         mapped_quad_point, weight = estimate_weights(shifted_q_point, d, step, ls_fn, ls_grad_fn)
         mapped_quad_points.append(mapped_quad_point)
         weights.append(weight)
-
     return mapped_quad_points, weights
 
 
@@ -259,6 +257,3 @@ def compute_qw(total_ids, total_refinement_levels, ls_fn, ls_grad_fn, quad_level
     weights = np.array(weights)
 
     return mapped_quad_points, weights
-
-
-
